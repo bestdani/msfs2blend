@@ -22,22 +22,25 @@ def get_indices(accessor_indices, buffer_indices) -> list:
     start = accessor_indices['byteOffset']
     end = start + accessor_indices['count'] * STRUCT_INDEX.size
     return [
-        STRUCT_INDEX.unpack(buffer_indices[i:i + STRUCT_INDEX.size])
+        STRUCT_INDEX.unpack(buffer_indices[i:i + STRUCT_INDEX.size])[0]
         for i in range(start, end, STRUCT_INDEX.size)
     ]
 
 
 def read_primitive(gltf, buffer, selected):
-    accessor_pos = gltf['accessors'][91]
-    accessor_texcoord = gltf['accessors'][94]
-    accessor_indices = gltf['accessors'][97]
-    buffer_view_indices = gltf['bufferViews'][4]
-    buffer_view_data = gltf['bufferViews'][3]
+    attributes = selected['attributes']
+
+    accessor_pos = gltf['accessors'][attributes['POSITION']]
+    accessor_texcoord = gltf['accessors'][attributes['TEXCOORD_0']]
+    accessor_indices = gltf['accessors'][selected['indices']]
+    buffer_view_indices = gltf['bufferViews'][accessor_indices['bufferView']]
+    # TODO separate buffer views and buffers per accessor since they can
+    #  potentially be different
+    buffer_view_data = gltf['bufferViews'][accessor_pos['bufferView']]
     buffer_indices = sub_buffer_from_view(buffer, buffer_view_indices)
     buffer_data = sub_buffer_from_view(buffer, buffer_view_data)
 
     indices = get_indices(accessor_indices, buffer_indices)
-    # TODO use actual indices although they appear to be ordered for now
     triangles_indices = [
         (indices[i], indices[i + 1], indices[i + 2])
         for i in range(0, len(indices), 3)
@@ -55,11 +58,12 @@ def read_primitive(gltf, buffer, selected):
         STRUCT_VEC2.unpack(buffer_data[i:i + STRUCT_VEC2.size])
         for i in texcoord_starts]
 
-    pos_tris = [
-        (pos_values[i], pos_values[i + 1], pos_values[i + 2])
-        for i in range(0, len(pos_values), 3)]
-    texcoord_tris = [
-        (texcoord_values[i], texcoord_values[i + 1], texcoord_values[i + 2])
-        for i in range(0, len(texcoord_values), 3)]
+    pos_tris = []
+    texcoord_tris = []
+    for tri_idx in triangles_indices:
+        i1, i2, i3 = tri_idx
+        pos_tris.append((pos_values[i1], pos_values[i2], pos_values[i3]))
+        texcoord_tris.append(
+            (texcoord_values[i1], texcoord_values[i2], texcoord_values[i3]))
 
     return pos_tris, texcoord_tris
