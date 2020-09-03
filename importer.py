@@ -12,14 +12,20 @@ def sub_buffer_from_view(buffer, buffer_view) -> list:
 
 
 def get_start_indices(accessor, stride) -> list:
-    start = accessor['byteOffset']
+    try:
+        start = accessor['byteOffset']
+    except KeyError:
+        start = 0
     count = accessor['count']
     end = start + count * stride
     return [i for i in range(start, end, stride)]
 
 
 def get_indices(accessor_indices, buffer_indices) -> list:
-    start = accessor_indices['byteOffset']
+    try:
+        start = accessor_indices['byteOffset']
+    except KeyError:
+        start = 0
     end = start + accessor_indices['count'] * STRUCT_INDEX.size
     return [
         STRUCT_INDEX.unpack(buffer_indices[i:i + STRUCT_INDEX.size])[0]
@@ -41,10 +47,6 @@ def read_primitive(gltf, buffer, selected):
     buffer_data = sub_buffer_from_view(buffer, buffer_view_data)
 
     indices = get_indices(accessor_indices, buffer_indices)
-    triangles_indices = [
-        (indices[i], indices[i + 1], indices[i + 2])
-        for i in range(0, len(indices), 3)
-    ]
 
     pos_starts = get_start_indices(
         accessor_pos, buffer_view_data['byteStride'])
@@ -58,6 +60,14 @@ def read_primitive(gltf, buffer, selected):
         STRUCT_VEC2.unpack(buffer_data[i:i + STRUCT_VEC2.size])
         for i in texcoord_starts]
 
+    return indices, pos_values, texcoord_values
+
+
+def as_tris(indices, pos_values, texcoord_values):
+    triangles_indices = [
+        (indices[i], indices[i + 1], indices[i + 2])
+        for i in range(0, len(indices), 3)
+    ]
     pos_tris = []
     texcoord_tris = []
     for tri_idx in triangles_indices:
@@ -65,5 +75,4 @@ def read_primitive(gltf, buffer, selected):
         pos_tris.append((pos_values[i1], pos_values[i2], pos_values[i3]))
         texcoord_tris.append(
             (texcoord_values[i1], texcoord_values[i2], texcoord_values[i3]))
-
     return pos_tris, texcoord_tris
