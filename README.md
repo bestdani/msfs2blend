@@ -1,4 +1,6 @@
-# MSFS (FS2020) Model Importer for Blender
+# Microsoft Flight Simulator (FS2020) Model Importer for Blender
+
+![](https://i.imgur.com/zxj4pZC.jpg)
 
 ## Latest Release Download
 See Releases page or click here: [Latest Release](https://github.com/bestdani/msfs2blend/releases/download/v0.1.1/io_msfs_gltf.py)
@@ -14,7 +16,7 @@ In a nutshell:
 For details refer to the [blender manual](https://docs.blender.org/manual/en/latest/editors/preferences/addons.html#rd-party-add-ons).
 
 ## About this Importer
-This is a **quick and dirty** importer for [Blender 2.8+](https://blender.org) **intended to be used for painting liveries** using the existing model files in 3d texture painting tools like blender itslef.
+This is a **quick and dirty** importer for [Blender 2.8+](https://blender.org) **intended to be used for painting liveries** using the existing model files in 3d texture painting tools like blender itself.
 
 This means at the current stage the importer is able to import **most meshes** with a UVMap and nothing more!
 
@@ -26,5 +28,5 @@ Note that you probably want to move some objects to be able to use these files f
 Many of these could be potentially solved with future updates.
 * Some meshes cannot be imported.
 * No support for UV channel 2 for now.
-* No import textures or material properties.
+* No import of textures or material properties.
 * Some object translations seem not to be at the actual positions. 
