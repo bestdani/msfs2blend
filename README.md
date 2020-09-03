@@ -1,4 +1,4 @@
-# MSFS (FS2020) Model Importer for Blender
+# Microsoft Flight Simulator (FS2020) Model Importer for Blender
 
 ![](https://i.imgur.com/zxj4pZC.jpg)
 
