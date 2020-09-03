@@ -36,6 +36,10 @@ import struct
 import bpy
 import bmesh
 
+from bpy_extras.io_utils import ImportHelper
+from bpy.props import StringProperty, BoolProperty, EnumProperty
+from bpy.types import Operator
+
 STRUCT_INDEX = struct.Struct('H')
 STRUCT_VEC2 = struct.Struct('ee')
 STRUCT_VEC3 = struct.Struct('fff')
@@ -257,14 +261,7 @@ def import_msfs_gltf(context, gltf_file, report):
     return {'FINISHED'}
 
 
-# ImportHelper is a helper class, defines filename and
-# invoke() function which calls the file selector.
-from bpy_extras.io_utils import ImportHelper
-from bpy.props import StringProperty, BoolProperty, EnumProperty
-from bpy.types import Operator
-
-
-class ImportSomeData(Operator, ImportHelper):
+class MsfsGltfImporter(Operator, ImportHelper):
     bl_idname = "msfs_gltf.importer"
     bl_label = "Import MSFS glTF file"
 
@@ -280,18 +277,17 @@ class ImportSomeData(Operator, ImportHelper):
         return import_msfs_gltf(context, self.filepath, self.report)
 
 
-# Only needed if you want to add into a dynamic menu
 def menu_func_import(self, context):
-    self.layout.operator(ImportSomeData.bl_idname, text="MSFS glTF (.gltf)")
+    self.layout.operator(MsfsGltfImporter.bl_idname, text="MSFS glTF (.gltf)")
 
 
 def register():
-    bpy.utils.register_class(ImportSomeData)
+    bpy.utils.register_class(MsfsGltfImporter)
     bpy.types.TOPBAR_MT_file_import.append(menu_func_import)
 
 
 def unregister():
-    bpy.utils.unregister_class(ImportSomeData)
+    bpy.utils.unregister_class(MsfsGltfImporter)
     bpy.types.TOPBAR_MT_file_import.remove(menu_func_import)
 
 
