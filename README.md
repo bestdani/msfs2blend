@@ -1,7 +1,7 @@
 # MSFS (FS2020) Model Importer for Blender
 
 ## Latest Release Download
-See Releases page or click here: [TODO link]
+See Releases page or click here: [Latest Release](https://github.com/bestdani/msfs2blend/releases/download/v0.1/io_msfs_gltf.py)
 
 ## How To Install
 In a nutshell:
