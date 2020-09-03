@@ -171,7 +171,6 @@ def fill_mesh_data(buffer, gltf, gltf_mesh, uv, b_mesh, mat_mapping, report):
 def create_meshes(buffer, gltf, materials, report):
     meshes = []
     for gltf_mesh in gltf['meshes']:
-        # FIXME remove this after testing
         bl_mesh = bpy.data.meshes.new(gltf_mesh['name'])
         meshes.append(bl_mesh)
 
@@ -188,7 +187,6 @@ def create_meshes(buffer, gltf, materials, report):
                 bl_mesh.materials.append(material)
                 material_count += 1
 
-        bl_mesh.use_fake_user = True
         b_mesh = bmesh.new()
         uv = b_mesh.loops.layers.uv.new()
 
@@ -220,7 +218,6 @@ def create_objects(gltf, meshes):
         obj.location = (trans[0], -trans[2], trans[1])
         obj.scale = node['scale']
         obj.rotation_quaternion = node['rotation']
-        obj.use_fake_user = True
         objects.append(obj)
     return objects
 
