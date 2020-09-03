@@ -1,12 +1,40 @@
+# ##### BEGIN GPL LICENSE BLOCK #####
+#
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software Foundation,
+# Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+#
+# ##### END GPL LICENSE BLOCK #####
+
+bl_info = {
+    "name": "MSFS glTF importer",
+    "author": "bestdani",
+    "version": (0, 1),
+    "blender": (2, 80, 0),
+    "location": "File > Import > MSFS glTF",
+    "description": "Imports a glTF file with Asobo extensions from the "
+                   "Microsoft Flight Simulator (2020) for texture painting",
+    "warning": "",
+    "doc_url": "",
+    "category": "Import-Export",
+}
+
 import json
-import logging
 import pathlib
 import struct
 
 import bpy
 import bmesh
-
-GLTF_FILE = 'examples/A320_NEO_LOD00.gltf'
 
 STRUCT_INDEX = struct.Struct('H')
 STRUCT_VEC2 = struct.Struct('ee')
@@ -86,7 +114,7 @@ def as_tris(indices, pos_values, texcoord_values):
     return pos_tris, texcoord_tris
 
 
-def fill_mesh_data(buffer, gltf, gltf_mesh, uv, b_mesh, mat_mapping):
+def fill_mesh_data(buffer, gltf, gltf_mesh, uv, b_mesh, mat_mapping, report):
     idx_offset = 0
     primitives = gltf_mesh['primitives']
     idx, pos, tc = read_primitive(gltf, buffer, primitives[0])
@@ -97,13 +125,13 @@ def fill_mesh_data(buffer, gltf, gltf_mesh, uv, b_mesh, mat_mapping):
     b_mesh.verts.ensure_lookup_table()
 
     for prim_idx, primitive in enumerate(primitives[0:]):
-        # TODO handle asobo primitives with different indices
+        # TODO handle Asobo primitives with different indices
         # see skipped exceptions on a320 model for example
         try:
             asobo_data = primitive['extras']['ASOBO_primitive']
         except KeyError:
             # TODO enhance error message
-            logging.error("no ASOBO sub primitive")
+            report({'ERROR'}, "No Asobo sub primitive")
             continue
 
         try:
@@ -139,7 +167,7 @@ def fill_mesh_data(buffer, gltf, gltf_mesh, uv, b_mesh, mat_mapping):
                 loop[uv].uv = tc[face_indices[i]]
 
 
-def create_meshes(buffer, gltf, materials):
+def create_meshes(buffer, gltf, materials, report):
     meshes = []
     for gltf_mesh in gltf['meshes']:
         # FIXME remove this after testing
@@ -164,10 +192,11 @@ def create_meshes(buffer, gltf, materials):
         uv = b_mesh.loops.layers.uv.new()
 
         try:
-            fill_mesh_data(buffer, gltf, gltf_mesh, uv, b_mesh, mat_mapping)
+            fill_mesh_data(buffer, gltf, gltf_mesh, uv, b_mesh, mat_mapping,
+                           report)
         except Exception:
             mesh_name = gltf_mesh['name']
-            logging.error(f'could not convert mesh "{mesh_name}"')
+            report({'ERROR'}, f'could not handle mesh "{mesh_name}"')
             continue
 
         b_mesh.to_mesh(bl_mesh)
@@ -217,17 +246,56 @@ def create_materials(gltf):
     return materials
 
 
-def import_asobo_gltf(gltf_file):
+def import_msfs_gltf(context, gltf_file, report):
     gltf, buffer = load_gltf_file(gltf_file)
 
     materials = create_materials(gltf)
-    meshes = create_meshes(buffer, gltf, materials)
+    meshes = create_meshes(buffer, gltf, materials, report)
     objects = create_objects(gltf, meshes)
-    collection = bpy.data.scenes['Scene'].collection
+    collection = context.collection
     for obj in objects:
         collection.objects.link(obj)
-    bpy.ops.wm.save_as_mainfile(filepath='imported.blend')
+
+    return {'FINISHED'}
 
 
-if __name__ == '__main__':
-    import_asobo_gltf(GLTF_FILE)
+# ImportHelper is a helper class, defines filename and
+# invoke() function which calls the file selector.
+from bpy_extras.io_utils import ImportHelper
+from bpy.props import StringProperty, BoolProperty, EnumProperty
+from bpy.types import Operator
+
+
+class ImportSomeData(Operator, ImportHelper):
+    bl_idname = "msfs_gltf.importer"
+    bl_label = "Import MSFS glTF file"
+
+    filename_ext = "..gltf"
+
+    filter_glob: StringProperty(
+        default="*.gltf",
+        options={'HIDDEN'},
+        maxlen=255,
+    )
+
+    def execute(self, context):
+        return import_msfs_gltf(context, self.filepath, self.report)
+
+
+# Only needed if you want to add into a dynamic menu
+def menu_func_import(self, context):
+    self.layout.operator(ImportSomeData.bl_idname, text="MSFS glTF (.gltf)")
+
+
+def register():
+    bpy.utils.register_class(ImportSomeData)
+    bpy.types.TOPBAR_MT_file_import.append(menu_func_import)
+
+
+def unregister():
+    bpy.utils.unregister_class(ImportSomeData)
+    bpy.types.TOPBAR_MT_file_import.remove(menu_func_import)
+
+
+if __name__ == "__main__":
+    register()
