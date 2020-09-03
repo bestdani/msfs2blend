@@ -18,7 +18,7 @@ For details refer to the [blender manual](https://docs.blender.org/manual/en/lat
 ## About this Importer
 This is a **quick and dirty** importer for [Blender 2.8+](https://blender.org) **intended to be used for painting liveries** using the existing model files in 3d texture painting tools like blender itself.
 
-This means at the current stage the importer is able to import **most meshes** with a UVMap and nothing more!
+This means at the current stage the importer is able to import **most meshes** with a UV map and nothing more!
 
 It's by no means able to fully reconstruct the original model files and not intended to be used like this.
 
