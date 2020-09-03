@@ -164,7 +164,8 @@ def fill_mesh_data(buffer, gltf, gltf_mesh, uv, b_mesh, mat_mapping, report):
             ))
             face.material_index = mat_index
             for i, loop in enumerate(face.loops):
-                loop[uv].uv = tc[face_indices[i]]
+                u, v = tc[face_indices[i]]
+                loop[uv].uv = (u, 1 - v)
 
 
 def create_meshes(buffer, gltf, materials, report):
