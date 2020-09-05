@@ -25,8 +25,8 @@ It's by no means able to fully reconstruct the original model files and not inte
 Note that you probably want to move some objects to be able to use these files for 3D texture painting.
 
 ##  Known Limitations and Issues
-Many of these could be potentially solved with future updates.
-* Some meshes cannot be imported.
+Many of these can potentially be solved with future updates.
+* Some meshes cannot be imported (see TODO items in the source code).
 * No support for UV channel 2 for now.
 * No import of textures or material properties.
-* Some object translations seem not to be at the actual positions. 
+* Some object translations and rotations seem not to be at the actual positions (probably a result of not yet supported parenting or bone imports and such).
