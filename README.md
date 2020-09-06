@@ -32,3 +32,6 @@ Many of these can potentially be solved with future updates.
 * No support for UV channel 2 for now.
 * No import of textures or material properties.
 * Some object translations and rotations seem not to be at the actual positions (probably a result of not yet supported parenting or bone imports and such).
+
+## Community:
+Flight Sim Forums discussion: https://forums.flightsimulator.com/t/3d-livery-painting-on-the-msfs-models/257637
