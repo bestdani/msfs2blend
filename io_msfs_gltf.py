@@ -288,6 +288,44 @@ def import_msfs_gltf(context, gltf_file, report):
     return {'FINISHED'}
 
 
+def path_good(path: pathlib.Path) -> bool:
+    return path.name == 'texconv.exe' and path.exists()
+
+
+class MsfsGltfImporterPreferences(AddonPreferences):
+    bl_idname = __name__
+
+    texconv_path: StringProperty(
+        name="Folder path",
+        description="absolute path to Microsoft texconv tool",
+        default="",
+        subtype="FILE_PATH"
+    )
+
+    def draw(self, context):
+        layout = self.layout
+        box = layout.box()
+        row = box.row()
+        row.label(text="Microsoft Texconv Tool")
+        row = box.row()
+        row.label(text="Required to enable importing textures.")
+        row = box.row()
+        row.label(
+            text="This tool automatically converts DDS images for usage "
+                 "inside of blender")
+        row = box.row()
+        row.operator("wm.url_open", text="Download texconv.exe").url = \
+            "https://github.com/microsoft/DirectXTex/releases"
+        row = box.row()
+        row.prop(self, "texconv_path", text="Path to downloaded texconv.exe")
+        row = box.row()
+        path = pathlib.Path(self.texconv_path)
+        if not path_good(path):
+            row.label(
+                text="No valid path entered. Texture import is disabled.",
+                icon='ERROR')
+
+
 class MsfsGltfImporter(Operator, ImportHelper):
     bl_idname = "msfs_gltf.importer"
     bl_label = "Import MSFS glTF file"
@@ -301,6 +339,9 @@ class MsfsGltfImporter(Operator, ImportHelper):
     )
 
     def execute(self, context):
+        preferences = context.preferences
+        addon_prefs = preferences.addons[__name__].preferences
+
         return import_msfs_gltf(context, self.filepath, self.report)
 
 
@@ -310,11 +351,13 @@ def menu_func_import(self, context):
 
 def register():
     bpy.utils.register_class(MsfsGltfImporter)
+    bpy.utils.register_class(MsfsGltfImporterPreferences)
     bpy.types.TOPBAR_MT_file_import.append(menu_func_import)
 
 
 def unregister():
     bpy.utils.unregister_class(MsfsGltfImporter)
+    bpy.utils.unregister_class(MsfsGltfImporterPreferences)
     bpy.types.TOPBAR_MT_file_import.remove(menu_func_import)
 
 
