@@ -15,11 +15,12 @@
 # Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 #
 # ##### END GPL LICENSE BLOCK #####
+import math
 
 bl_info = {
     "name": "MSFS glTF importer",
     "author": "bestdani",
-    "version": (0, 1),
+    "version": (0, 2),
     "blender": (2, 80, 0),
     "location": "File > Import > MSFS glTF",
     "description": "Imports a glTF file with Asobo extensions from the "
@@ -38,7 +39,7 @@ import bmesh
 
 from bpy_extras.io_utils import ImportHelper
 from bpy.props import StringProperty, BoolProperty, EnumProperty
-from bpy.types import Operator
+from bpy.types import Operator, AddonPreferences
 
 STRUCT_INDEX = struct.Struct('H')
 STRUCT_VEC2 = struct.Struct('ee')
@@ -207,9 +208,9 @@ def create_meshes(buffer, gltf, materials, report):
     return meshes
 
 
-def create_objects(gltf, meshes):
+def create_objects(nodes, meshes):
     objects = []
-    for node in gltf['nodes']:
+    for node in nodes:
         name = node['name']
         try:
             mesh = meshes[node['mesh']]
@@ -217,11 +218,20 @@ def create_objects(gltf, meshes):
             mesh = bpy.data.meshes.new(name)
 
         obj = bpy.data.objects.new(name, mesh)
+
         trans = node['translation']
         # converting to blender z up world
-        obj.location = (trans[0], -trans[2], trans[1])
-        obj.scale = node['scale']
-        obj.rotation_quaternion = node['rotation']
+        obj.location = trans[0], -trans[2], trans[1]
+
+        scale = node['scale']
+        # converting to blender z up world
+        obj.scale = scale[0], scale[2], scale[1]
+
+        obj.rotation_mode = 'QUATERNION'
+        rot = node['rotation']
+        # converting to blender z up world
+        obj.rotation_quaternion = rot[3], rot[0], -rot[2], rot[1]
+
         objects.append(obj)
     return objects
 
@@ -248,15 +258,32 @@ def create_materials(gltf):
     return materials
 
 
+def setup_object_hierarchy(bl_objects, gltf, collection):
+    scene_description = gltf['scenes'][0]
+    gltf_nodes = gltf['nodes']
+    for i in scene_description['nodes']:
+        gltf_node = gltf_nodes[i]
+        bl_object = bl_objects[i]
+        collection.objects.link(bl_object)
+        try:
+            gltf_children = gltf_node['children']
+        except KeyError:
+            # no children to add
+            pass
+        else:
+            for j in gltf_children:
+                bl_subobject = bl_objects[j]
+                bl_subobject.parent = bl_object
+                collection.objects.link(bl_subobject)
+
+
 def import_msfs_gltf(context, gltf_file, report):
     gltf, buffer = load_gltf_file(gltf_file)
 
     materials = create_materials(gltf)
     meshes = create_meshes(buffer, gltf, materials, report)
-    objects = create_objects(gltf, meshes)
-    collection = context.collection
-    for obj in objects:
-        collection.objects.link(obj)
+    objects = create_objects(gltf['nodes'], meshes)
+    setup_object_hierarchy(objects, gltf, context.collection)
 
     return {'FINISHED'}
 
@@ -265,7 +292,7 @@ class MsfsGltfImporter(Operator, ImportHelper):
     bl_idname = "msfs_gltf.importer"
     bl_label = "Import MSFS glTF file"
 
-    filename_ext = "..gltf"
+    filename_ext = ".gltf"
 
     filter_glob: StringProperty(
         default="*.gltf",
