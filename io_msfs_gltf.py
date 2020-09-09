@@ -16,6 +16,8 @@
 #
 # ##### END GPL LICENSE BLOCK #####
 import math
+import subprocess
+from typing import Optional, Callable
 
 bl_info = {
     "name": "MSFS glTF importer",
@@ -37,6 +39,7 @@ import struct
 import bpy
 import bmesh
 
+import numpy as np
 from bpy_extras.io_utils import ImportHelper
 from bpy.props import StringProperty, BoolProperty, EnumProperty
 from bpy.types import Operator, AddonPreferences
@@ -44,6 +47,8 @@ from bpy.types import Operator, AddonPreferences
 STRUCT_INDEX = struct.Struct('H')
 STRUCT_VEC2 = struct.Struct('ee')
 STRUCT_VEC3 = struct.Struct('fff')
+
+converted_normal_images = set()
 
 
 def sub_buffer_from_view(buffer, buffer_view) -> list:
@@ -249,11 +254,111 @@ def load_gltf_file(gltf_file_name):
     return gltf, buffer
 
 
-def create_materials(gltf):
+def convert_normal_image(normal_image, report):
+    pixels = np.array(normal_image.pixels[:]).reshape((-1, 4))
+    rgb_pixels = pixels[:, 0:3]
+    rgb_pixels[:, 1] = 1.0 - rgb_pixels[:, 1]
+    rgb_pixels[:, 2] = np.sqrt(
+        1 - (rgb_pixels[:, 0] - 0.5) ** 2 - (rgb_pixels[:, 1] - 0.5) ** 2
+    )
+    pixel_data = pixels.reshape((-1, 1)).transpose()[0]
+    normal_image.pixels = pixel_data
+    try:
+        normal_image.save()
+    except RuntimeError:
+        report(
+            {'ERROR'},
+            f"could not save converted image {normal_image.name}")
+
+
+def setup_mat_nodes(bl_mat, gltf_mat, textures, images, report):
+    try:
+        base_texture = textures[
+            gltf_mat['pbrMetallicRoughness']['baseColorTexture']['index']]
+        base_image = images[
+            base_texture['extensions']['MSFT_texture_dds']['source']]
+    except (KeyError, IndexError):
+        base_image = None
+
+    try:
+        metallic_roughness_texture = textures[
+            gltf_mat['pbrMetallicRoughness']['metallicRoughnessTexture'][
+                'index']]
+        met_rough_image = images[
+            metallic_roughness_texture['extensions']['MSFT_texture_dds'][
+                'source']]
+    except (KeyError, IndexError):
+        met_rough_image = None
+
+    try:
+        normal_texture = textures[gltf_mat['normalTexture']['index']]
+        normal_image = images[
+            normal_texture['extensions']['MSFT_texture_dds']['source']]
+    except (KeyError, IndexError):
+        normal_image = None
+
+    bl_mat.use_nodes = True
+    tree = bl_mat.node_tree
+    p_bsdf_node = tree.nodes['Principled BSDF']
+
+    if base_image:
+        base_image_node = tree.nodes.new('ShaderNodeTexImage')
+        base_image_node.location = (-500, 400)
+        base_image_node.image = base_image
+        tree.links.new(p_bsdf_node.inputs['Base Color'],
+                       base_image_node.outputs['Color'])
+        tree.links.new(p_bsdf_node.inputs['Alpha'],
+                       base_image_node.outputs['Alpha'])
+
+    if met_rough_image:
+        met_rough_image_node = tree.nodes.new('ShaderNodeTexImage')
+        met_rough_image_node.location = (-500, 0)
+        met_rough_image_node.image = met_rough_image
+        met_rough_image_node.image.colorspace_settings.name = 'Non-Color'
+
+        separate_node = tree.nodes.new('ShaderNodeSeparateRGB')
+        separate_node.location = (-200, 0)
+
+        tree.links.new(separate_node.inputs['Image'],
+                       met_rough_image_node.outputs['Color'])
+        tree.links.new(p_bsdf_node.inputs['Metallic'],
+                       separate_node.outputs['B'])
+        tree.links.new(p_bsdf_node.inputs['Roughness'],
+                       separate_node.outputs['G'])
+
+    if normal_image:
+        if normal_image not in converted_normal_images:
+            report({'INFO'}, f"converting_normal_image {normal_image}")
+            convert_normal_image(normal_image, report)
+            converted_normal_images.add(normal_image)
+        normal_image_node = tree.nodes.new('ShaderNodeTexImage')
+        normal_image_node.location = (-500, -400)
+        normal_image_node.image = normal_image
+        normal_image_node.image.colorspace_settings.name = 'Non-Color'
+
+        normal_map_node = tree.nodes.new('ShaderNodeNormalMap')
+        normal_map_node.location = (-200, -400)
+
+        tree.links.new(normal_map_node.inputs['Color'],
+                       normal_image_node.outputs['Color'])
+        tree.links.new(p_bsdf_node.inputs['Normal'],
+                       normal_map_node.outputs['Normal'])
+
+
+def create_materials(gltf, images, report):
+    report({'INFO'}, 'creating materials')
     materials = []
+    textures = gltf['textures']
     for gltf_mat in gltf['materials']:
+        try:
+            blend_method = gltf_mat['alphaMode']
+        except KeyError:
+            blend_method = 'OPAQUE'
+
         name = gltf_mat['name']
         bl_mat = bpy.data.materials.new(name)
+        bl_mat.blend_method = blend_method
+        setup_mat_nodes(bl_mat, gltf_mat, textures, images, report)
         materials.append(bl_mat)
     return materials
 
@@ -277,10 +382,101 @@ def setup_object_hierarchy(bl_objects, gltf, collection):
                 collection.objects.link(bl_subobject)
 
 
-def import_msfs_gltf(context, gltf_file, report):
+def convert_images(gltf, texture_in_dir, texconv_path, texture_out_dir,
+                   report) -> list:
+    to_convert_images = []
+    converted_images = []
+    final_image_paths = []
+    for i, image in enumerate(gltf['images']):
+        try:
+            dds_file = texture_in_dir / image['uri']
+        except KeyError:
+            report({'ERROR'}, f"invalid image at {i}")
+            final_image_paths.append(None)
+            continue
+
+        if not dds_file.exists():
+            report({'ERROR'},
+                   f"invalid image file location at {i}: {dds_file}")
+            final_image_paths.append(None)
+            continue
+
+        final_image_paths.append('')
+        to_convert_images.append(str(dds_file))
+
+    output_dir_param = str(texture_out_dir)
+    texture_out_dir.mkdir(parents=True, exist_ok=True)
+    report({'INFO'}, "converting images with texconv")
+    try:
+        output_lines = subprocess.run(
+            [
+                str(texconv_path),
+                '-y',
+                '-o', output_dir_param,
+                '-f', 'rgba',
+                '-ft', 'png',
+                *to_convert_images
+            ],
+            check=True,
+            capture_output=True
+        ).stdout.decode('cp1252').split('\r\n')
+    except subprocess.CalledProcessError as e:
+        report({'ERROR'}, f"could not convert image textures {e}")
+        return final_image_paths
+    else:
+        for line in output_lines:
+            line: str
+            if line.startswith('writing'):
+                png_file = line[len('writing '):]
+                path = pathlib.Path(png_file)
+                if path.exists():
+                    converted_images.append(path)
+                else:
+                    converted_images.append(None)
+
+        conv_i = 0
+        for i, image in enumerate(final_image_paths):
+            if image is None:
+                continue
+            try:
+                final_image_paths[i] = converted_images[conv_i]
+            except IndexError:
+                final_image_paths[i] = None
+            else:
+                conv_i += 1
+        return final_image_paths
+
+
+def load_images(images, report) -> list:
+    bl_images = []
+    for image in images:
+        if image:
+            bl_image = bpy.data.images.load(filepath=str(image))
+            bl_image.use_fake_user = True
+        else:
+            bl_image = None
+        bl_images.append(bl_image)
+    return bl_images
+
+
+def import_msfs_gltf(context, gltf_file: str, report: Callable,
+                     textures_allowed: bool,
+                     texconv_path: Optional[pathlib.Path],
+                     texture_out_dir: Optional[pathlib.Path],
+                     texture_in_dir: Optional[pathlib.Path]):
     gltf, buffer = load_gltf_file(gltf_file)
 
-    materials = create_materials(gltf)
+    if textures_allowed:
+        gltf_name = pathlib.Path(gltf_file).name
+        texture_name = pathlib.Path(texture_in_dir).name
+        full_texture_out_dir = texture_out_dir / gltf_name / texture_name
+        images = convert_images(
+            gltf, texture_in_dir, texconv_path, full_texture_out_dir, report)
+    else:
+        images = []
+
+    bl_images = load_images(images, report)
+    materials = create_materials(gltf, bl_images, report)
     meshes = create_meshes(buffer, gltf, materials, report)
     objects = create_objects(gltf['nodes'], meshes)
     setup_object_hierarchy(objects, gltf, context.collection)
@@ -292,15 +488,65 @@ def path_good(path: pathlib.Path) -> bool:
     return path.name == 'texconv.exe' and path.exists()
 
 
+class MsfsGltfImporter(Operator, ImportHelper):
+    bl_idname = "msfs_gltf.importer"
+    bl_label = "Import MSFS glTF file"
+
+    filename_ext = ".gltf"
+
+    texture_folder_name: StringProperty(
+        name="Texture name",
+        description="texture folder name",
+        default="TEXTURE",
+    )
+
+    filter_glob: StringProperty(
+        default="*.gltf",
+        options={'HIDDEN'},
+        maxlen=255,
+    )
+
+    def execute(self, context):
+        preferences = context.preferences
+        addon_prefs = preferences.addons[__name__].preferences
+        file_path = pathlib.Path(self.fiilepath)
+        textures_allowed = addon_prefs.textures_allowed
+
+        textures_path = file_path.parent.parent / self.texture_folder_name
+        textures_allowed = textures_allowed and textures_path.exists() and \
+                           textures_path.is_dir()
+
+        if textures_allowed:
+            texconv_path = pathlib.Path(addon_prefs.texconv_file)
+            texture_target_dir = pathlib.Path(addon_prefs.texture_target_dir)
+        else:
+            texconv_path = None
+            texture_target_dir = None
+
+        return import_msfs_gltf(
+            context, self.filepath, self.report,
+            textures_allowed, texconv_path, texture_target_dir, textures_path)
+
+
 class MsfsGltfImporterPreferences(AddonPreferences):
     bl_idname = __name__
 
-    texconv_path: StringProperty(
+    texconv_file: StringProperty(
         name="Folder path",
         description="absolute path to Microsoft texconv tool",
         default="",
         subtype="FILE_PATH"
     )
+
+    texture_target_dir: StringProperty(
+        name="Folder path",
+        description="location where converted textures get saved in their "
+                    "subfolders",
+        default="",
+        subtype="DIR_PATH"
+    )
+
+    textures_allowed: BoolProperty(options={'HIDDEN'})
 
     def draw(self, context):
         layout = self.layout
@@ -317,32 +563,29 @@ class MsfsGltfImporterPreferences(AddonPreferences):
         row.operator("wm.url_open", text="Download texconv.exe").url = \
             "https://github.com/microsoft/DirectXTex/releases"
         row = box.row()
-        row.prop(self, "texconv_path", text="Path to downloaded texconv.exe")
-        row = box.row()
-        path = pathlib.Path(self.texconv_path)
-        if not path_good(path):
+        row.prop(self, "texconv_file", text="Path to downloaded texconv.exe")
+        texconv_path = pathlib.Path(self.texconv_file)
+
+        self.textures_allowed = True
+        if not path_good(texconv_path):
+            self.textures_allowed = False
+            row = box.row()
             row.label(
-                text="No valid path entered. Texture import is disabled.",
+                text="No texconv.exe file has been selected. Texture import "
+                     "is disabled.",
                 icon='ERROR')
-
-
-class MsfsGltfImporter(Operator, ImportHelper):
-    bl_idname = "msfs_gltf.importer"
-    bl_label = "Import MSFS glTF file"
-
-    filename_ext = ".gltf"
-
-    filter_glob: StringProperty(
-        default="*.gltf",
-        options={'HIDDEN'},
-        maxlen=255,
-    )
-
-    def execute(self, context):
-        preferences = context.preferences
-        addon_prefs = preferences.addons[__name__].preferences
-
-        return import_msfs_gltf(context, self.filepath, self.report)
+        row = box.row()
+        row.prop(self, "texture_target_dir",
+                 text="Base path for converted textures")
+        target_path = pathlib.Path(self.texture_target_dir)
+        if self.texture_target_dir == "" or not target_path.exists() or not \
+                target_path.is_dir():
+            self.textures_allowed = False
+            row = box.row()
+            row.label(
+                text="No valid conversion path path entered. Texture import "
+                     "is disabled.",
+                icon='ERROR')
 
 
 def menu_func_import(self, context):
