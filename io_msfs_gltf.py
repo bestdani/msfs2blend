@@ -249,12 +249,43 @@ def create_materials(gltf):
     return materials
 
 
+def get_gltf_node_by_name(gltf, name):
+    for node in gltf['nodes']:
+        if node['name'] == name:
+            return node
+    return {}
+
+
+def get_obj_by_name(objects, name):
+    for object in objects:
+        if object.name == name:
+            return object
+    return {}
+
+
+def create_relationships(gltf, objects):
+    for object in objects:
+        node = get_gltf_node_by_name(gltf, object.name)
+        try:
+            children = node['children']
+            for child_index in children:
+                child_node = gltf['nodes'][child_index]
+                try:
+                    child_object = get_obj_by_name(objects, child_node['name'])
+                    child_object.parent = object
+                except KeyError:
+                    break
+        except KeyError:
+            pass
+
+
 def import_msfs_gltf(context, gltf_file, report):
     gltf, buffer = load_gltf_file(gltf_file)
 
     materials = create_materials(gltf)
     meshes = create_meshes(buffer, gltf, materials, report)
     objects = create_objects(gltf, meshes)
+    create_relationships(gltf, objects)
     collection = context.collection
     for obj in objects:
         collection.objects.link(obj)
