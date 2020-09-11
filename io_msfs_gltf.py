@@ -509,7 +509,7 @@ class MsfsGltfImporter(Operator, ImportHelper):
     def execute(self, context):
         preferences = context.preferences
         addon_prefs = preferences.addons[__name__].preferences
-        file_path = pathlib.Path(self.fiilepath)
+        file_path = pathlib.Path(self.filepath)
         textures_allowed = addon_prefs.textures_allowed
 
         textures_path = file_path.parent.parent / self.texture_folder_name
