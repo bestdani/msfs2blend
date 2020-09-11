@@ -14,6 +14,7 @@ In a nutshell:
 * Addon Settings: Press **Install** Button.
 * File Browser: Locate the downloaded **io_msfs_gltf.py** file and press **Install Add-on**.
 * Addon Settings: Tick the Checkbox next to the Add-on entry.
+* Follow the instructions in the addon to download and setup [texconv.exe](https://github.com/microsoft/DirectXTex/releases) to enable texture import after conversion.
 
 For details refer to the [blender manual](https://docs.blender.org/manual/en/latest/editors/preferences/addons.html#rd-party-add-ons).
 
