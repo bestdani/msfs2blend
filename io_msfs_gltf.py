@@ -221,7 +221,8 @@ def create_objects(gltf, meshes):
         # converting to blender z up world
         obj.location = (trans[0], -trans[2], trans[1])
         obj.scale = node['scale']
-        obj.rotation_quaternion = node['rotation']
+        obj.rotation_mode = 'QUATERNION'
+        obj.rotation_quaternion = [node['rotation'][3], node['rotation'][0], -node['rotation'][2], node['rotation'][1]]
         objects.append(obj)
     return objects
 
