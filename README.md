@@ -30,7 +30,6 @@ Note that you probably want to move some objects to be able to use these files f
 ##  Known Limitations and Issues
 Many of these can potentially be solved with future updates.
 * Some meshes cannot be imported (see TODO items in the source code).
-* No support for UV channel 2 for now.
 * Some object rotations seem to be wrong probably because they are animated with bones which is not supported by this importer for now.
 
 ## Community:
