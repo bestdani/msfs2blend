@@ -366,20 +366,25 @@ def create_materials(gltf, images, report):
 def setup_object_hierarchy(bl_objects, gltf, collection):
     scene_description = gltf['scenes'][0]
     gltf_nodes = gltf['nodes']
+
+    def add_children(bl_parent_object, gltf_parent_node):
+        try:
+            gltf_children = gltf_parent_node['children']
+        except KeyError:
+            return
+
+        for j in gltf_children:
+            gltf_child_node = gltf_nodes[j]
+            bl_child_object = bl_objects[j]
+            bl_child_object.parent = bl_parent_object
+            collection.objects.link(bl_child_object)
+            add_children(bl_child_object, gltf_child_node)
+
     for i in scene_description['nodes']:
         gltf_node = gltf_nodes[i]
         bl_object = bl_objects[i]
         collection.objects.link(bl_object)
-        try:
-            gltf_children = gltf_node['children']
-        except KeyError:
-            # no children to add
-            pass
-        else:
-            for j in gltf_children:
-                bl_subobject = bl_objects[j]
-                bl_subobject.parent = bl_object
-                collection.objects.link(bl_subobject)
+        add_children(bl_object, gltf_node)
 
 
 def convert_images(gltf, texture_in_dir, texconv_path, texture_out_dir,
