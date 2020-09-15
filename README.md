@@ -18,7 +18,7 @@ In a nutshell:
 For details refer to the [blender manual](https://docs.blender.org/manual/en/latest/editors/preferences/addons.html#rd-party-add-ons).
 
 ## Changelog
-##ä v0.2
+### v0.2
 * Added capability to import uv map (thanks to [AdenFlorian](https://github.com/AdenFlorian) for adding this!)
 * Added capability to handle object parenting
 * Fixed issue with some rotations
