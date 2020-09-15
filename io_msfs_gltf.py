@@ -15,9 +15,6 @@
 # Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 #
 # ##### END GPL LICENSE BLOCK #####
-import math
-import subprocess
-from typing import Optional, Callable
 
 bl_info = {
     "name": "MSFS glTF importer",
@@ -42,6 +39,8 @@ import bmesh
 from bpy_extras.io_utils import ImportHelper
 from bpy.props import StringProperty, BoolProperty, EnumProperty
 from bpy.types import Operator
+
+from typing import Callable
 
 STRUCT_INDEX = struct.Struct('H')
 STRUCT_VEC2 = struct.Struct('ee')
