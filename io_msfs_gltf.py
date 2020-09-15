@@ -15,11 +15,14 @@
 # Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 #
 # ##### END GPL LICENSE BLOCK #####
+import math
+import subprocess
+from typing import Optional, Callable
 
 bl_info = {
     "name": "MSFS glTF importer",
     "author": "bestdani",
-    "version": (0, 1),
+    "version": (0, 2),
     "blender": (2, 80, 0),
     "location": "File > Import > MSFS glTF",
     "description": "Imports a glTF file with Asobo extensions from the "
@@ -77,7 +80,8 @@ def read_primitive(gltf, buffer, selected):
     attributes = selected['attributes']
 
     accessor_pos = gltf['accessors'][attributes['POSITION']]
-    accessor_texcoord = gltf['accessors'][attributes['TEXCOORD_0']]
+    accessor_texcoord_0 = gltf['accessors'][attributes['TEXCOORD_0']]
+    accessor_texcoord_1 = gltf['accessors'][attributes['TEXCOORD_1']]
     accessor_indices = gltf['accessors'][selected['indices']]
     buffer_view_indices = gltf['bufferViews'][accessor_indices['bufferView']]
     # TODO separate buffer views and buffers per accessor since they can
@@ -90,17 +94,22 @@ def read_primitive(gltf, buffer, selected):
 
     pos_starts = get_start_indices(
         accessor_pos, buffer_view_data['byteStride'])
-    texcoord_starts = get_start_indices(
-        accessor_texcoord, buffer_view_data['byteStride'])
+    texcoord_0_starts = get_start_indices(
+        accessor_texcoord_0, buffer_view_data['byteStride'])
+    texcoord_1_starts = get_start_indices(
+        accessor_texcoord_1, buffer_view_data['byteStride'])
 
     pos_values = [
         STRUCT_VEC3.unpack(buffer_data[i:i + STRUCT_VEC3.size])
         for i in pos_starts]
-    texcoord_values = [
+    texcoord_0_values = [
         STRUCT_VEC2.unpack(buffer_data[i:i + STRUCT_VEC2.size])
-        for i in texcoord_starts]
+        for i in texcoord_0_starts]
+    texcoord_1_values = [
+        STRUCT_VEC2.unpack(buffer_data[i:i + STRUCT_VEC2.size])
+        for i in texcoord_1_starts]
 
-    return indices, pos_values, texcoord_values
+    return indices, pos_values, texcoord_0_values, texcoord_1_values
 
 
 def as_tris(indices, pos_values, texcoord_values):
@@ -118,10 +127,11 @@ def as_tris(indices, pos_values, texcoord_values):
     return pos_tris, texcoord_tris
 
 
-def fill_mesh_data(buffer, gltf, gltf_mesh, uv, b_mesh, mat_mapping, report):
+def fill_mesh_data(buffer, gltf, gltf_mesh, uv0, uv1, b_mesh, mat_mapping,
+                   report):
     idx_offset = 0
     primitives = gltf_mesh['primitives']
-    idx, pos, tc = read_primitive(gltf, buffer, primitives[0])
+    idx, pos, tc0, tc1 = read_primitive(gltf, buffer, primitives[0])
 
     for p in pos:
         # converting to blender z up world
@@ -168,8 +178,10 @@ def fill_mesh_data(buffer, gltf, gltf_mesh, uv, b_mesh, mat_mapping, report):
             ))
             face.material_index = mat_index
             for i, loop in enumerate(face.loops):
-                u, v = tc[face_indices[i]]
-                loop[uv].uv = (u, 1 - v)
+                u, v = tc0[face_indices[i]]
+                loop[uv0].uv = (u, 1 - v)
+                u, v = tc1[face_indices[i]]
+                loop[uv1].uv = (u, 1 - v)
 
 
 def create_meshes(buffer, gltf, materials, report):
@@ -192,10 +204,12 @@ def create_meshes(buffer, gltf, materials, report):
                 material_count += 1
 
         b_mesh = bmesh.new()
-        uv = b_mesh.loops.layers.uv.new()
+        uv0 = b_mesh.loops.layers.uv.new()
+        uv1 = b_mesh.loops.layers.uv.new()
 
         try:
-            fill_mesh_data(buffer, gltf, gltf_mesh, uv, b_mesh, mat_mapping,
+            fill_mesh_data(buffer, gltf, gltf_mesh, uv0, uv1, b_mesh,
+                           mat_mapping,
                            report)
         except Exception:
             mesh_name = gltf_mesh['name']
@@ -207,9 +221,9 @@ def create_meshes(buffer, gltf, materials, report):
     return meshes
 
 
-def create_objects(gltf, meshes):
+def create_objects(nodes, meshes):
     objects = []
-    for node in gltf['nodes']:
+    for node in nodes:
         name = node['name']
         try:
             mesh = meshes[node['mesh']]
@@ -217,11 +231,20 @@ def create_objects(gltf, meshes):
             mesh = bpy.data.meshes.new(name)
 
         obj = bpy.data.objects.new(name, mesh)
+
         trans = node['translation']
         # converting to blender z up world
-        obj.location = (trans[0], -trans[2], trans[1])
-        obj.scale = node['scale']
-        obj.rotation_quaternion = node['rotation']
+        obj.location = trans[0], -trans[2], trans[1]
+
+        scale = node['scale']
+        # converting to blender z up world
+        obj.scale = scale[0], scale[2], scale[1]
+
+        obj.rotation_mode = 'QUATERNION'
+        rot = node['rotation']
+        # converting to blender z up world
+        obj.rotation_quaternion = rot[3], rot[0], -rot[2], rot[1]
+
         objects.append(obj)
     return objects
 
@@ -248,15 +271,37 @@ def create_materials(gltf):
     return materials
 
 
-def import_msfs_gltf(context, gltf_file, report):
+def setup_object_hierarchy(bl_objects, gltf, collection):
+    scene_description = gltf['scenes'][0]
+    gltf_nodes = gltf['nodes']
+
+    def add_children(bl_parent_object, gltf_parent_node):
+        try:
+            gltf_children = gltf_parent_node['children']
+        except KeyError:
+            return
+
+        for j in gltf_children:
+            gltf_child_node = gltf_nodes[j]
+            bl_child_object = bl_objects[j]
+            bl_child_object.parent = bl_parent_object
+            collection.objects.link(bl_child_object)
+            add_children(bl_child_object, gltf_child_node)
+
+    for i in scene_description['nodes']:
+        gltf_node = gltf_nodes[i]
+        bl_object = bl_objects[i]
+        collection.objects.link(bl_object)
+        add_children(bl_object, gltf_node)
+
+
+def import_msfs_gltf(context, gltf_file: str, report: Callable):
     gltf, buffer = load_gltf_file(gltf_file)
 
     materials = create_materials(gltf)
     meshes = create_meshes(buffer, gltf, materials, report)
-    objects = create_objects(gltf, meshes)
-    collection = context.collection
-    for obj in objects:
-        collection.objects.link(obj)
+    objects = create_objects(gltf['nodes'], meshes)
+    setup_object_hierarchy(objects, gltf, context.collection)
 
     return {'FINISHED'}
 
@@ -265,7 +310,13 @@ class MsfsGltfImporter(Operator, ImportHelper):
     bl_idname = "msfs_gltf.importer"
     bl_label = "Import MSFS glTF file"
 
-    filename_ext = "..gltf"
+    filename_ext = ".gltf"
+
+    texture_folder_name: StringProperty(
+        name="Texture name",
+        description="texture folder name",
+        default="TEXTURE",
+    )
 
     filter_glob: StringProperty(
         default="*.gltf",
