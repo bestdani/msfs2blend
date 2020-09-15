@@ -19,7 +19,7 @@ For details refer to the [blender manual](https://docs.blender.org/manual/en/lat
 
 ## Changelog
 ### v0.2
-* Added capability to import uv map (thanks to [AdenFlorian](https://github.com/AdenFlorian) for adding this!)
+* Added capability to import 2nd uv map (thanks to [AdenFlorian](https://github.com/AdenFlorian) for adding this!)
 * Added capability to handle object parenting
 * Fixed issue with some rotations
 
