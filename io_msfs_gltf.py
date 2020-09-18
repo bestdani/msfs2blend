@@ -15,21 +15,21 @@
 # Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 #
 # ##### END GPL LICENSE BLOCK #####
-import code
-import math
+import configparser
+import itertools
 import subprocess
-from typing import Optional, Callable, List
+from typing import Callable, List, Optional, Set
 
 bl_info = {
     "name": "MSFS glTF importer",
     "author": "bestdani",
-    "version": (0, 2),
+    "version": (0, 3),
     "blender": (2, 80, 0),
     "location": "File > Import > MSFS glTF",
     "description": "Imports a glTF file with Asobo extensions from the "
                    "Microsoft Flight Simulator (2020) for texture painting",
     "warning": "",
-    "doc_url": "",
+    "doc_url": "https://github.com/bestdani/msfs2blend",
     "category": "Import-Export",
 }
 
@@ -404,9 +404,64 @@ def import_images(gltf, converted_textures_dir, report) -> list:
     raise NotImplementedError("TODO")
 
 
-def convert_images(gltf, original_textures_dir, texconv_path,
-                   converted_textures_dir,
-                   report) -> list:
+def collect_fallbacks_of(
+        texture_path: pathlib.Path, fs_base_path: Optional[pathlib.Path],
+        report: Callable
+) -> Set[pathlib.Path]:
+    def _collect_recursive(current_path: pathlib.Path):
+        texture_cfg_path = current_path / 'texture.cfg'
+        config = configparser.ConfigParser()
+        config.read(texture_cfg_path.absolute())
+
+        if not texture_cfg_path.exists():
+            report({'INFO'}, f"non existing texture.cfg {texture_cfg_path}")
+
+        try:
+            fltsim = config['fltsim']
+            for i in itertools.count(start=1):
+                fallback_path = pathlib.Path(fltsim[f'fallback.{i}'])
+                absolute_path = (texture_path / fallback_path).resolve()
+                if absolute_path.exists():
+                    final_path = absolute_path
+                elif fs_base_path is not None:
+                    for i, dir in enumerate(fallback_path.parts):
+                        if dir != '..':
+                            non_backwards_path = '/'.join(
+                                fallback_path.parts[i:])
+                            base_relative_path = fs_base_path / \
+                                                 non_backwards_path
+                            break
+                    else:
+                        report({'INFO'},
+                               f"could not find fallback {fallback_path}")
+                        continue
+
+                    if base_relative_path.exists():
+                        final_path = base_relative_path
+                    else:
+                        report({'INFO'},
+                               f"could not find fallback {fallback_path}")
+                        continue
+                else:
+                    report({'INFO'},
+                           f"could not find fallback {fallback_path}")
+                    continue
+
+                if final_path not in fallbacks:
+                    fallbacks.add(final_path)
+                    _collect_recursive(final_path)
+
+        except KeyError:
+            pass
+
+    fallbacks = set()
+    _collect_recursive(texture_path)
+    return fallbacks
+
+
+def convert_images(gltf, original_textures_dir, texconv_path: pathlib.Path,
+                   fs_base_path: Optional[pathlib.Path],
+                   converted_textures_dir, report) -> list:
     to_convert_images = []
     converted_images = []
     final_image_paths = []
@@ -419,10 +474,17 @@ def convert_images(gltf, original_textures_dir, texconv_path,
             continue
 
         if not dds_file.exists():
-            report({'ERROR'},
-                   f"invalid image file location at {i}: {dds_file}")
-            final_image_paths.append(None)
-            continue
+            texture_fallbacks = collect_fallbacks_of(original_textures_dir,
+                                                     fs_base_path, report)
+            for fallback_dir in texture_fallbacks:
+                dds_file = fallback_dir / image['uri']
+                if dds_file.exists():
+                    break
+            else:
+                report({'ERROR'},
+                       f"invalid image file location at {i}: {dds_file}")
+                final_image_paths.append(None)
+                continue
 
         final_image_paths.append('')
         to_convert_images.append(str(dds_file))
@@ -484,19 +546,17 @@ def load_images(images, report) -> list:
 
 # FIXME refactor parameters
 def import_msfs_gltf(context, gltf_file: pathlib.Path, report: Callable,
-                     convert_textures: bool,
-                     import_textures: bool,
+                     convert_textures: bool, import_textures: bool,
                      texconv_path: Optional[pathlib.Path],
+                     fs_base_path: Optional[pathlib.Path],
                      converted_textures_dir: Optional[pathlib.Path],
                      original_textures_dirs: List[pathlib.Path]):
     gltf, buffer = load_gltf_file(gltf_file)
 
     if convert_textures:
-        # TODO implement support for multiple texture dirs discovery
-        images = convert_images(
-            gltf, original_textures_dirs[0], texconv_path,
-            converted_textures_dir,
-            report)
+        # TODO refactor multiple dir usage
+        images = convert_images(gltf, original_textures_dirs[0], texconv_path,
+                                fs_base_path, converted_textures_dir, report)
     elif import_textures:
         images = import_images(
             gltf, converted_textures_dir, report)
@@ -553,23 +613,22 @@ class MsfsTexturesImporter(Operator, ImportHelper):
         if not textures_dir.is_dir():
             textures_dir = textures_dir.parent
         ImportProperties.import_textures_dir = textures_dir
-        import_msfs_gltf(
-            context, ImportProperties.gltf_file, self.report,
-            ImportProperties.convert_textures,
-            ImportProperties.import_textures,
-            ImportProperties.texconv_path,
-            ImportProperties.import_textures_dir,
-            ImportProperties.convert_textures_dirs)
+        import_msfs_gltf(context, ImportProperties.gltf_file, self.report,
+                         ImportProperties.convert_textures,
+                         ImportProperties.import_textures,
+                         ImportProperties.texconv_path, None,
+                         ImportProperties.import_textures_dir,
+                         ImportProperties.convert_textures_dirs)
 
         return {'FINISHED'}
 
 
 class MsfsTexturesConverter(Operator, ImportHelper):
     bl_idname = "msfs_gltf.textures_converter"
-    bl_label = "Convert Textures"
+    bl_label = "texture.cfg"
 
     filter_glob: StringProperty(
-        default="*.dds",
+        default="*.cfg",
         options={'HIDDEN'},
         maxlen=255,
     )
@@ -629,14 +688,12 @@ class MsfsGltfImporter(Operator, ImportHelper):
                     "Texture conversion is disabled because of non "
                     "proper texconv.exe configuration in the Add-on settings")
         else:
-            breakpoint()
-            import_msfs_gltf(
-                context, ImportProperties.gltf_file, self.report,
-                ImportProperties.convert_textures,
-                ImportProperties.import_textures,
-                ImportProperties.texconv_path,
-                ImportProperties.import_textures_dir,
-                ImportProperties.convert_textures_dirs)
+            import_msfs_gltf(context, ImportProperties.gltf_file, self.report,
+                             ImportProperties.convert_textures,
+                             ImportProperties.import_textures,
+                             ImportProperties.texconv_path, None,
+                             ImportProperties.import_textures_dir,
+                             ImportProperties.convert_textures_dirs)
 
         return {'FINISHED'}
 
@@ -651,7 +708,7 @@ class MsfsGltfImporterPreferences(AddonPreferences):
         subtype="FILE_PATH"
     )
 
-    texture_target_dir: StringProperty(
+    fs_base_dir: StringProperty(
         name="Folder path",
         description="location where converted textures get saved in their "
                     "subfolders",
@@ -661,6 +718,7 @@ class MsfsGltfImporterPreferences(AddonPreferences):
 
     conversion_allowed: BoolProperty(options={'HIDDEN'})
     texconv_path: Optional[pathlib.Path]
+    fs_base_path: Optional[pathlib.Path]
 
     def draw(self, context):
         layout = self.layout
@@ -668,7 +726,7 @@ class MsfsGltfImporterPreferences(AddonPreferences):
         row = box.row()
         row.label(text="Microsoft Texconv Tool")
         row = box.row()
-        row.label(text="Required to enable importing textures.")
+        row.label(text="Required to enable texture conversion.")
         row = box.row()
         row.label(
             text="This tool automatically converts DDS images for usage "
@@ -679,7 +737,6 @@ class MsfsGltfImporterPreferences(AddonPreferences):
         row = box.row()
         row.prop(self, "texconv_file", text="Path to downloaded texconv.exe")
         texconv_path = pathlib.Path(self.texconv_file)
-
         if path_good(texconv_path):
             self.conversion_allowed = True
             self.texconv_path = texconv_path
@@ -689,6 +746,24 @@ class MsfsGltfImporterPreferences(AddonPreferences):
             row.label(
                 text="No texconv.exe file has been selected. Texture import "
                      "is disabled.",
+                icon='ERROR')
+
+        box = layout.box()
+        row = box.row()
+        row.label(text="Flight Simulator Installation")
+        row = box.row()
+        row.label(text="Required to find all textures")
+        row = box.row()
+        row.prop(self, "fs_base_dir",
+                 text="Flight Simulator fs-base path")
+        fs_base_path = pathlib.Path(self.fs_base_dir)
+        if fs_base_path.exists() and fs_base_path.is_dir():
+            self.fs_base_path = fs_base_path
+        else:
+            row = box.row()
+            row.label(
+                text="No fs base path has been specified. Some textures "
+                     "might not get imported!",
                 icon='ERROR')
 
 
