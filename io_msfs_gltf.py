@@ -20,6 +20,8 @@ import itertools
 import subprocess
 from typing import Callable, List, Optional, Set
 
+NORMAL_IMAGES_LIST_JSON = 'bl_importer_converted_normal_images.json'
+
 bl_info = {
     "name": "MSFS glTF importer",
     "author": "bestdani",
@@ -48,8 +50,6 @@ from bpy.types import Operator, AddonPreferences
 STRUCT_INDEX = struct.Struct('H')
 STRUCT_VEC2 = struct.Struct('ee')
 STRUCT_VEC3 = struct.Struct('fff')
-
-converted_normal_images = set()
 
 
 def sub_buffer_from_view(buffer, buffer_view) -> list:
@@ -283,7 +283,8 @@ def convert_normal_image(normal_image, report):
             f"could not save converted image {normal_image.name}")
 
 
-def setup_mat_nodes(bl_mat, gltf_mat, textures, images, report):
+def setup_mat_nodes(bl_mat, gltf_mat, textures, images,
+                    converted_normal_images: set, report):
     try:
         base_texture = textures[
             gltf_mat['pbrMetallicRoughness']['baseColorTexture']['index']]
@@ -339,10 +340,11 @@ def setup_mat_nodes(bl_mat, gltf_mat, textures, images, report):
                        separate_node.outputs['G'])
 
     if normal_image:
-        if normal_image not in converted_normal_images:
+        normal_image_name = pathlib.Path(normal_image.filepath).name
+        if normal_image_name not in converted_normal_images:
             report({'INFO'}, f"converting_normal_image {normal_image}")
             convert_normal_image(normal_image, report)
-            converted_normal_images.add(normal_image)
+            converted_normal_images.add(normal_image_name)
         normal_image_node = tree.nodes.new('ShaderNodeTexImage')
         normal_image_node.location = (-500, -400)
         normal_image_node.image = normal_image
@@ -357,7 +359,7 @@ def setup_mat_nodes(bl_mat, gltf_mat, textures, images, report):
                        normal_map_node.outputs['Normal'])
 
 
-def create_materials(gltf, images, report):
+def create_materials(gltf, images, report, converted_normal_images: set):
     report({'INFO'}, 'creating materials')
     materials = []
     textures = gltf['textures']
@@ -370,7 +372,8 @@ def create_materials(gltf, images, report):
         name = gltf_mat['name']
         bl_mat = bpy.data.materials.new(name)
         bl_mat.blend_method = blend_method
-        setup_mat_nodes(bl_mat, gltf_mat, textures, images, report)
+        setup_mat_nodes(bl_mat, gltf_mat, textures, images,
+                        converted_normal_images, report)
         materials.append(bl_mat)
     return materials
 
@@ -399,69 +402,21 @@ def setup_object_hierarchy(bl_objects, gltf, collection):
         add_children(bl_object, gltf_node)
 
 
-def import_images(gltf, converted_textures_dir, report) -> list:
-    # TODO implement
-    raise NotImplementedError("TODO")
-
-
-def collect_fallbacks_of(
-        texture_path: pathlib.Path, fs_base_path: Optional[pathlib.Path],
-        report: Callable
-) -> Set[pathlib.Path]:
-    def _collect_recursive(current_path: pathlib.Path):
-        texture_cfg_path = current_path / 'texture.cfg'
-        config = configparser.ConfigParser()
-        config.read(texture_cfg_path.absolute())
-
-        if not texture_cfg_path.exists():
-            report({'INFO'}, f"non existing texture.cfg {texture_cfg_path}")
-
-        try:
-            fltsim = config['fltsim']
-            for i in itertools.count(start=1):
-                fallback_path = pathlib.Path(fltsim[f'fallback.{i}'])
-                absolute_path = (texture_path / fallback_path).resolve()
-                if absolute_path.exists():
-                    final_path = absolute_path
-                elif fs_base_path is not None:
-                    for i, dir in enumerate(fallback_path.parts):
-                        if dir != '..':
-                            non_backwards_path = '/'.join(
-                                fallback_path.parts[i:])
-                            base_relative_path = fs_base_path / \
-                                                 non_backwards_path
-                            break
-                    else:
-                        report({'INFO'},
-                               f"could not find fallback {fallback_path}")
-                        continue
-
-                    if base_relative_path.exists():
-                        final_path = base_relative_path
-                    else:
-                        report({'INFO'},
-                               f"could not find fallback {fallback_path}")
-                        continue
-                else:
-                    report({'INFO'},
-                           f"could not find fallback {fallback_path}")
-                    continue
-
-                if final_path not in fallbacks:
-                    fallbacks.add(final_path)
-                    _collect_recursive(final_path)
-
-        except KeyError:
-            pass
-
-    fallbacks = set()
-    _collect_recursive(texture_path)
-    return fallbacks
+def import_images(gltf, converted_textures_dir: pathlib.Path, report) -> list:
+    image_list = []
+    for i, image in enumerate(gltf['images']):
+        dds_file = converted_textures_dir / image['uri']
+        png_file = dds_file.with_suffix('.PNG')
+        if png_file.exists():
+            image_list.append(png_file)
+        else:
+            report({'ERROR'}, f"Cannot import image {png_file}")
+    return image_list
 
 
 def convert_images(gltf, original_textures_dir, texconv_path: pathlib.Path,
                    fs_base_path: Optional[pathlib.Path],
-                   converted_textures_dir, report) -> list:
+                   converted_textures_dir: pathlib.Path, report) -> list:
     to_convert_images = []
     converted_images = []
     final_image_paths = []
@@ -532,6 +487,61 @@ def convert_images(gltf, original_textures_dir, texconv_path: pathlib.Path,
         return final_image_paths
 
 
+def collect_fallbacks_of(
+        texture_path: pathlib.Path, fs_base_path: Optional[pathlib.Path],
+        report: Callable
+) -> Set[pathlib.Path]:
+    def _collect_recursive(current_path: pathlib.Path):
+        texture_cfg_path = current_path / 'texture.cfg'
+        config = configparser.ConfigParser()
+        config.read(texture_cfg_path.absolute())
+
+        if not texture_cfg_path.exists():
+            report({'INFO'}, f"non existing texture.cfg {texture_cfg_path}")
+
+        try:
+            fltsim = config['fltsim']
+            for i in itertools.count(start=1):
+                fallback_path = pathlib.Path(fltsim[f'fallback.{i}'])
+                absolute_path = (texture_path / fallback_path).resolve()
+                if absolute_path.exists():
+                    final_path = absolute_path
+                elif fs_base_path is not None:
+                    for i, dir in enumerate(fallback_path.parts):
+                        if dir != '..':
+                            non_backwards_path = '/'.join(
+                                fallback_path.parts[i:])
+                            base_relative_path = fs_base_path / \
+                                                 non_backwards_path
+                            break
+                    else:
+                        report({'INFO'},
+                               f"could not find fallback {fallback_path}")
+                        continue
+
+                    if base_relative_path.exists():
+                        final_path = base_relative_path
+                    else:
+                        report({'INFO'},
+                               f"could not find fallback {fallback_path}")
+                        continue
+                else:
+                    report({'INFO'},
+                           f"could not find fallback {fallback_path}")
+                    continue
+
+                if final_path not in fallbacks:
+                    fallbacks.add(final_path)
+                    _collect_recursive(final_path)
+
+        except KeyError:
+            pass
+
+    fallbacks = set()
+    _collect_recursive(texture_path)
+    return fallbacks
+
+
 def load_images(images, report) -> list:
     bl_images = []
     for image in images:
@@ -544,7 +554,18 @@ def load_images(images, report) -> list:
     return bl_images
 
 
+def save_converted_normal_list(normal_images: list, json_file: pathlib.Path):
+    with open(str(json_file), 'w') as handle:
+        json.dump(normal_images, handle)
+
+
 # FIXME refactor parameters
+def load_converted_normal_list(json_file: pathlib.Path) -> list:
+    with open(str(json_file), 'r') as handle:
+        normal_images = json.load(handle)
+    return normal_images
+
+
 def import_msfs_gltf(context, gltf_file: pathlib.Path, report: Callable,
                      convert_textures: bool, import_textures: bool,
                      texconv_path: Optional[pathlib.Path],
@@ -557,14 +578,32 @@ def import_msfs_gltf(context, gltf_file: pathlib.Path, report: Callable,
         # TODO refactor multiple dir usage
         images = convert_images(gltf, original_textures_dirs[0], texconv_path,
                                 fs_base_path, converted_textures_dir, report)
+        converted_normal_images = set()
+
     elif import_textures:
         images = import_images(
             gltf, converted_textures_dir, report)
+        try:
+            converted_normal_images = set(load_converted_normal_list(
+                converted_textures_dir / NORMAL_IMAGES_LIST_JSON
+            ))
+        except FileNotFoundError:
+            converted_normal_images = set()
+
     else:
         images = []
+        converted_normal_images = set()
 
     bl_images = load_images(images, report)
-    materials = create_materials(gltf, bl_images, report)
+    materials = create_materials(gltf, bl_images, report,
+                                 converted_normal_images)
+
+    if convert_textures:
+        save_converted_normal_list(
+            list(converted_normal_images),
+            converted_textures_dir / NORMAL_IMAGES_LIST_JSON
+        )
+
     meshes = create_meshes(buffer, gltf, materials, report)
     objects = create_objects(gltf['nodes'], meshes)
     setup_object_hierarchy(objects, gltf, context.collection)
@@ -576,6 +615,7 @@ def path_good(path: pathlib.Path) -> bool:
 
 class ImportProperties:
     texconv_path: Optional[pathlib.Path]
+    fs_base_path: Optional[pathlib.Path]
     gltf_file: Optional[pathlib.Path]
     convert_textures: bool
     import_textures: bool
@@ -585,16 +625,12 @@ class ImportProperties:
     @classmethod
     def reset(cls):
         cls.texconv_path = None
+        cls.fs_base_path = None
         cls.gltf_file = None
         cls.convert_textures = False
         cls.import_textures = False
         cls.convert_textures_dirs = []
         cls.import_textures_dir = None
-
-
-def import_call(import_properties):
-    print(f"gltf {import_properties.gltf_file}")
-    print(f"tex {import_properties.import_textures_dir}")
 
 
 class MsfsTexturesImporter(Operator, ImportHelper):
@@ -616,7 +652,8 @@ class MsfsTexturesImporter(Operator, ImportHelper):
         import_msfs_gltf(context, ImportProperties.gltf_file, self.report,
                          ImportProperties.convert_textures,
                          ImportProperties.import_textures,
-                         ImportProperties.texconv_path, None,
+                         ImportProperties.texconv_path,
+                         ImportProperties.fs_base_path,
                          ImportProperties.import_textures_dir,
                          ImportProperties.convert_textures_dirs)
 
@@ -677,9 +714,14 @@ class MsfsGltfImporter(Operator, ImportHelper):
         ImportProperties.reset()
         ImportProperties.gltf_file = self.filepath
         if self.import_textures == 'LOAD_CONVERTED':
+            ImportProperties.fs_base_path = pathlib.Path(
+                addon_prefs.fs_base_dir)
             bpy.ops.msfs_gltf.textures_importer('INVOKE_DEFAULT')
         elif self.import_textures == 'CONVERT':
-            ImportProperties.texconv_path = addon_prefs.texconv_file
+            ImportProperties.texconv_path = pathlib.Path(
+                addon_prefs.texconv_file)
+            ImportProperties.fs_base_path = pathlib.Path(
+                addon_prefs.fs_base_dir)
             if addon_prefs.conversion_allowed:
                 bpy.ops.msfs_gltf.textures_converter('INVOKE_DEFAULT')
             else:
@@ -691,7 +733,8 @@ class MsfsGltfImporter(Operator, ImportHelper):
             import_msfs_gltf(context, ImportProperties.gltf_file, self.report,
                              ImportProperties.convert_textures,
                              ImportProperties.import_textures,
-                             ImportProperties.texconv_path, None,
+                             ImportProperties.texconv_path,
+                             ImportProperties.fs_base_path,
                              ImportProperties.import_textures_dir,
                              ImportProperties.convert_textures_dirs)
 
