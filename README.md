@@ -19,7 +19,7 @@ In a nutshell:
 For details refer to the [blender manual](https://docs.blender.org/manual/en/latest/editors/preferences/addons.html#rd-party-add-ons).
 
 ## How To Use
-* TODO Add short picture description especially explain texture import options
+* TODO Add short picture description especially explain texture import options and setup (texconv.exe, fs base path setup) requirements.
 
 ## About this Importer
 This is a **quick and dirty** importer for [Blender 2.8+](https://blender.org) **intended to be used for painting liveries** using the existing model files in 3d texture painting tools like blender itself.
