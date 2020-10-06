@@ -36,7 +36,9 @@ import struct
 import bpy
 import bmesh
 
+from bpy_extras.image_utils import load_image
 from bpy_extras.io_utils import ImportHelper
+from bpy_extras.node_shader_utils import PrincipledBSDFWrapper
 from bpy.props import StringProperty, BoolProperty, EnumProperty
 from bpy.types import Operator
 
@@ -261,11 +263,47 @@ def load_gltf_file(gltf_file_name):
     return gltf, buffer
 
 
-def create_materials(gltf):
+def get_image_paths(gltf, texture_path: pathlib.Path, report: Callable):
+    images = []
+    if 'images' in gltf and len(gltf['images']) > 0:
+        for gltf_img in gltf['images']:
+            uri = pathlib.Path(gltf_img['uri'])
+            # blender doesn't support DDS...?
+            if uri.suffix.lower() == '.dds':
+                uri = uri.with_suffix('')
+                if not uri.suffix.lower() == '.png':
+                    uri = uri.with_suffix('.png')
+                report({'WARNING'}, f'Replaced texture "{gltf_img["uri"]}" with "{uri}", DDS not supported')
+
+            images.append(texture_path.joinpath(uri))
+    return images
+
+
+def get_texture_paths(gltf, texture_path: pathlib.Path, report: Callable):
+    images = get_image_paths(gltf, texture_path, report)
+    textures = []
+    for gltf_tex in gltf['textures']:
+        source = gltf_tex['extensions']['MSFT_texture_dds']['source']
+        assert source < len(images)
+        textures.append(images[source])
+    return textures
+
+
+def create_materials(gltf, texture_path: pathlib.Path, report: Callable):
+    textures = get_texture_paths(gltf, texture_path, report)
     materials = []
     for gltf_mat in gltf['materials']:
         name = gltf_mat['name']
         bl_mat = bpy.data.materials.new(name)
+        bl_mat.use_nodes = True
+        bl_bsdf = PrincipledBSDFWrapper(bl_mat, is_readonly=False)
+
+        if 'pbrMetallicRoughness' in gltf_mat:
+            if 'baseColorTexture' in gltf_mat['pbrMetallicRoughness']:
+                albd_idx = gltf_mat['pbrMetallicRoughness']['baseColorTexture']['index']
+                bl_bsdf.base_color_texture.image = load_image(str(textures[albd_idx]), place_holder=True, check_existing=True)
+        # TODO other channels... problematic though because MSFS uses DirectX conventions for channel mapping
+
         materials.append(bl_mat)
     return materials
 
@@ -294,10 +332,16 @@ def setup_object_hierarchy(bl_objects, gltf, collection):
         add_children(bl_object, gltf_node)
 
 
-def import_msfs_gltf(context, gltf_file: str, report: Callable):
+def import_msfs_gltf(context, gltf_file: str, texture_folder_name: str, report: Callable):
     gltf, buffer = load_gltf_file(gltf_file)
 
-    materials = create_materials(gltf)
+    # if texture folder is not an absolute path, we assume standard SimObject heirachy
+    texture_path = pathlib.Path(texture_folder_name)
+    if not texture_path.is_absolute:
+        gltf_path = pathlib.Path(gltf_file)
+        texture_path = gltf_path.parent.parent.joinpath(texture_path)
+
+    materials = create_materials(gltf, texture_path, report)
     meshes = create_meshes(buffer, gltf, materials, report)
     objects = create_objects(gltf['nodes'], meshes)
     setup_object_hierarchy(objects, gltf, context.collection)
@@ -313,7 +357,7 @@ class MsfsGltfImporter(Operator, ImportHelper):
 
     texture_folder_name: StringProperty(
         name="Texture name",
-        description="texture folder name",
+        description="texture folder name or absolute path",
         default="TEXTURE",
     )
 
@@ -324,7 +368,7 @@ class MsfsGltfImporter(Operator, ImportHelper):
     )
 
     def execute(self, context):
-        return import_msfs_gltf(context, self.filepath, self.report)
+        return import_msfs_gltf(context, self.filepath, self.texture_folder_name, self.report)
 
 
 def menu_func_import(self, context):
