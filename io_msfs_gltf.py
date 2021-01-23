@@ -256,7 +256,7 @@ def load_gltf_file(gltf_file_name):
         gltf = json.load(handle)
 
     assert 'buffers' in gltf and len(gltf['buffers']) == 1, "Unable to handle 0 or multiple buffers"
-    bin_file_name = gltf_file_path.with_name(gltf['buffers']['uri'])
+    bin_file_name = gltf_file_path.with_name(gltf['buffers'][0]['uri'])
 
     with open(bin_file_name, 'rb') as handle:
         buffer = handle.read()
