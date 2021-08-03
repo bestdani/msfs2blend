@@ -130,16 +130,15 @@ def fill_mesh_data(buffer, gltf, gltf_mesh, uv0, uv1, b_mesh, mat_mapping,
                    report):
     idx_offset = 0
     primitives = gltf_mesh['primitives']
-    idx, pos, tc0, tc1 = read_primitive(gltf, buffer, primitives[0])
-
-    for p in pos:
-        # converting to blender z up world
-        b_mesh.verts.new((p[0], -p[2], p[1]))
-    b_mesh.verts.ensure_lookup_table()
 
     for prim_idx, primitive in enumerate(primitives[0:]):
-        # TODO handle Asobo primitives with different indices
-        # see skipped exceptions on a320 model for example
+        idx, pos, tc0, tc1 = read_primitive(gltf, buffer, primitive)
+
+        for p in pos:
+            # converting to blender z up world
+            b_mesh.verts.new((p[0], -p[2], p[1]))
+        b_mesh.verts.ensure_lookup_table()
+
         try:
             asobo_data = primitive['extras']['ASOBO_primitive']
         except KeyError:
@@ -160,20 +159,20 @@ def fill_mesh_data(buffer, gltf, gltf_mesh, uv0, uv1, b_mesh, mat_mapping,
         try:
             start_vertex = asobo_data['BaseVertexIndex']
         except KeyError:
-            start_vertex = 0
+            start_vertex = idx_offset
 
         tri_count = asobo_data['PrimitiveCount']
         for tri_i in range(tri_count):
             i = start_index + tri_i * 3
             face_indices = (
-                idx_offset + start_vertex + idx[i + 2],
-                idx_offset + start_vertex + idx[i + 1],
-                idx_offset + start_vertex + idx[i + 0],
+                idx[i + 2],
+                idx[i + 1],
+                idx[i + 0],
             )
             face = b_mesh.faces.new((
-                b_mesh.verts[face_indices[0]],
-                b_mesh.verts[face_indices[1]],
-                b_mesh.verts[face_indices[2]],
+                b_mesh.verts[start_vertex + face_indices[0]],
+                b_mesh.verts[start_vertex + face_indices[1]],
+                b_mesh.verts[start_vertex + face_indices[2]],
             ))
             face.material_index = mat_index
             for i, loop in enumerate(face.loops):
@@ -181,6 +180,8 @@ def fill_mesh_data(buffer, gltf, gltf_mesh, uv0, uv1, b_mesh, mat_mapping,
                 loop[uv0].uv = (u, 1 - v)
                 u, v = tc1[face_indices[i]]
                 loop[uv1].uv = (u, 1 - v)
+
+        idx_offset += len(pos)
 
 
 def create_meshes(buffer, gltf, materials, report):
@@ -260,10 +261,12 @@ def create_objects(nodes, meshes):
 
 def load_gltf_file(gltf_file_name):
     gltf_file_path = pathlib.Path(gltf_file_name)
-    bin_file_name = gltf_file_path.with_suffix('.bin')
 
     with open(gltf_file_path, 'r') as handle:
         gltf = json.load(handle)
+
+    assert 'buffers' in gltf and len(gltf['buffers']) == 1, "Unable to handle 0 or multiple buffers"
+    bin_file_name = gltf_file_path.with_name(gltf['buffers'][0]['uri'])
 
     with open(bin_file_name, 'rb') as handle:
         buffer = handle.read()
