@@ -19,7 +19,7 @@
 bl_info = {
     "name": "MSFS glTF importer",
     "author": "bestdani",
-    "version": (0, 2),
+    "version": (0, 3),
     "blender": (2, 80, 0),
     "location": "File > Import > MSFS glTF",
     "description": "Imports a glTF file with Asobo extensions from the "
