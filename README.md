@@ -19,7 +19,7 @@ For details refer to the [blender manual](https://docs.blender.org/manual/en/lat
 
 ## Changelog
 ### v0.3
-* Fixed issue with missing nodes in the glTF file causing error messages on some imports got fixed thanks to this msfs community post: https://forums.flightsimulator.com/t/3d-livery-painting-on-the-msfs-models/257637/128
+* Issue with missing nodes in the glTF file causing error messages on some imports got fixed thanks to this msfs community post: https://forums.flightsimulator.com/t/3d-livery-painting-on-the-msfs-models/257637/128
 
 ### v0.2
 * Added capability to import 2nd uv map (thanks to [AdenFlorian](https://github.com/AdenFlorian) for adding this!)
