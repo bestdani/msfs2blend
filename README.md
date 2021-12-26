@@ -2,7 +2,7 @@
 ![](https://i.imgur.com/zxj4pZC.jpg)
 
 ## Latest Release Download
-See Releases page or click here: [Latest Release](https://github.com/bestdani/msfs2blend/releases/download/v0.2/io_msfs_gltf.py)
+See Releases page or click here: [Latest Release](https://github.com/bestdani/msfs2blend/releases/latest)
 
 ## Quickstart Video Introduction
 [Add-on installation and blender 3d texturing basics](https://youtu.be/SZCe_x-V9co)
