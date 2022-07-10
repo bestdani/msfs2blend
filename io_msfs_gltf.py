@@ -22,6 +22,12 @@ from typing import Callable, List, Optional, Set
 
 NORMAL_IMAGES_LIST_JSON = 'bl_importer_converted_normal_images.json'
 
+BLEND_METHOD_CONVERSION = {
+    'OPAQUE': 'OPAQUE',
+    'BLEND': 'BLEND',
+    'MASK': 'CLIP'
+}
+
 bl_info = {
     "name": "MSFS glTF importer",
     "author": "bestdani",
@@ -374,10 +380,10 @@ def create_materials(gltf, images, report, converted_normal_images: set):
     materials = []
     textures = gltf['textures']
     for gltf_mat in gltf['materials']:
-        try:
-            blend_method = gltf_mat['alphaMode']
-        except KeyError:
-            blend_method = 'OPAQUE'
+        blend_method = BLEND_METHOD_CONVERSION.get(
+            gltf_mat.get('alphaMode', 'OPAQUE'),
+            'OPAQUE'
+        )
 
         name = gltf_mat['name']
         bl_mat = bpy.data.materials.new(name)
