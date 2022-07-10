@@ -24,7 +24,7 @@ Ensure to also point to the MSFS installation directory (will be required to fin
 
 ![3_select_texture_cfg_file](https://user-images.githubusercontent.com/11302762/178145524-64d0ae72-26eb-400d-9e7f-ecb28959059c.png)
 
-**Select the texture *output* directory in which textconv**
+**Select the texture conversion working directory**
 
 ![4_select_textures_output](https://user-images.githubusercontent.com/11302762/178145525-77e1ed00-4ad7-4fa5-b310-634c71faa33f.png)
 
