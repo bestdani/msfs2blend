@@ -38,7 +38,7 @@ You can then either start 3d painting in blender or export the result to externa
 [Add-on installation and blender 3d texturing basics](https://youtu.be/SZCe_x-V9co) (outdated, texture import capability is not shown there)
 
 ## About this Importer
-This is a **quick and dirty** importer for [Blender 2.8+](https://blender.org) **intended to be used for painting liveries** using the existing model files in 3d texture painting tools like blender itself.
+This is a **quick and dirty** importer for [Blender 3.0+](https://blender.org) **intended to be used for painting liveries** using the existing model files in 3d texture painting tools like blender itself.
 
 This means at the current stage the importer is able to import **most meshes** with a UV map and nothing more!
 
@@ -47,9 +47,8 @@ It's by no means able to fully reconstruct the original model files and not inte
 Note that you probably want to move some objects to be able to use these files for 3D texture painting.
 
 ##  Known Limitations and Issues
-Many of these can potentially be solved with future updates.
-* Some meshes cannot be imported (see TODO items in the source code).
 * Some object rotations seem to be wrong probably because they are animated with bones which is not supported by this importer for now.
+* Some special objects (sound positions) causes errors which can just be ignored for texture painting purposes.
 
 ## Community:
 Flight Sim Forums discussion: https://forums.flightsimulator.com/t/3d-livery-painting-on-the-msfs-models/257637
