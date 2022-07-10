@@ -181,11 +181,20 @@ def fill_mesh_data(buffer, gltf, gltf_mesh, uv0, uv1, b_mesh, mat_mapping,
                 idx_offset + start_vertex + idx[i + 1],
                 idx_offset + start_vertex + idx[i + 0],
             )
-            face = b_mesh.faces.new((
-                b_mesh.verts[face_indices[0]],
-                b_mesh.verts[face_indices[1]],
-                b_mesh.verts[face_indices[2]],
-            ))
+            try:
+                face = b_mesh.faces.new((
+                    b_mesh.verts[face_indices[0]],
+                    b_mesh.verts[face_indices[1]],
+                    b_mesh.verts[face_indices[2]],
+                ))
+            except ValueError:
+                report(
+                    {'WARNING'},
+                    f'Skipping face indices while importing '
+                    f'{gltf_mesh["name"]} '
+                    f'{face_indices} because they already exist.'
+                )
+                continue
             face.material_index = mat_index
             for i, loop in enumerate(face.loops):
                 u, v = tc0[face_indices[i]]
@@ -221,9 +230,10 @@ def create_meshes(buffer, gltf, materials, report):
             fill_mesh_data(buffer, gltf, gltf_mesh, uv0, uv1, b_mesh,
                            mat_mapping,
                            report)
-        except Exception:
+        except Exception as e:
             mesh_name = gltf_mesh['name']
-            report({'ERROR'}, f'could not handle mesh "{mesh_name}"')
+            report({'ERROR'}, f'could not handle mesh "{mesh_name}'
+                              f'\nException: {type(e)}\nDetails: {e}"')
             continue
 
         b_mesh.to_mesh(bl_mesh)
