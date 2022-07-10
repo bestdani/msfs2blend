@@ -32,7 +32,7 @@ bl_info = {
     "name": "MSFS glTF importer",
     "author": "bestdani",
     "version": (0, 4),
-    "blender": (2, 80, 0),
+    "blender": (3, 0, 0),
     "location": "File > Import > MSFS glTF",
     "description": "Imports a glTF file with Asobo extensions from the "
                    "Microsoft Flight Simulator (2020) for texture painting",
