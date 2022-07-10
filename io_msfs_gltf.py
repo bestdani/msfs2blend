@@ -25,7 +25,7 @@ NORMAL_IMAGES_LIST_JSON = 'bl_importer_converted_normal_images.json'
 bl_info = {
     "name": "MSFS glTF importer",
     "author": "bestdani",
-    "version": (0, 3),
+    "version": (0, 4),
     "blender": (2, 80, 0),
     "location": "File > Import > MSFS glTF",
     "description": "Imports a glTF file with Asobo extensions from the "
@@ -236,18 +236,28 @@ def create_objects(nodes, meshes):
 
         obj = bpy.data.objects.new(name, mesh)
 
-        trans = node['translation']
-        # converting to blender z up world
-        obj.location = trans[0], -trans[2], trans[1]
+        try:
+            trans = node['translation']
+            # converting to blender z up world
+            obj.location = trans[0], -trans[2], trans[1]
+        except KeyError:
+            obj.location = 0, 0, 0
 
-        scale = node['scale']
-        # converting to blender z up world
-        obj.scale = scale[0], scale[2], scale[1]
+        try:
+            scale = node['scale']
+            # converting to blender z up world
+            obj.scale = scale[0], scale[2], scale[1]
+        except KeyError:
+            obj.scale = 1, 1, 1
 
         obj.rotation_mode = 'QUATERNION'
-        rot = node['rotation']
-        # converting to blender z up world
-        obj.rotation_quaternion = rot[3], rot[0], -rot[2], rot[1]
+
+        try:
+            rot = node['rotation']
+            # converting to blender z up world
+            obj.rotation_quaternion = rot[3], rot[0], -rot[2], rot[1]
+        except KeyError:
+            obj.rotation_quaternion = 1, 0, 0, 0
 
         objects.append(obj)
     return objects
